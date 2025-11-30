@@ -1,0 +1,58 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalare pachete de bază
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    apache2 \
+    php \
+    php-cli \
+    php-mbstring \
+    php-xml \
+    php-curl \
+    libapache2-mod-php \
+    sudo \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configurare SSH
+RUN mkdir /var/run/sshd && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config && \
+    sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+
+# Creare utilizator ansible
+RUN useradd -m -s /bin/bash ansible && \
+    echo "ansible ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Configurare directoare .ssh
+RUN mkdir -p /home/ansible/.ssh && \
+    chmod 700 /home/ansible/.ssh && \
+    chown ansible:ansible /home/ansible/.ssh
+
+# Copiere cheie publică pentru autentificare
+COPY keys/ansible_to_testserver.pub /home/ansible/.ssh/authorized_keys
+
+# Setare permisiuni pentru cheia publică
+RUN chmod 600 /home/ansible/.ssh/authorized_keys && \
+    chown ansible:ansible /home/ansible/.ssh/authorized_keys
+
+# Configurare Apache
+RUN a2enmod rewrite php8.1 || a2enmod rewrite php
+
+# Creare directoare pentru aplicație
+RUN mkdir -p /var/www/html/phpapp/public && \
+    chown -R www-data:www-data /var/www/html/phpapp
+
+# Creare fișier de test PHP
+RUN echo '<?php phpinfo(); ?>' > /var/www/html/phpapp/public/info.php && \
+    chown www-data:www-data /var/www/html/phpapp/public/info.php
+
+# Script de pornire
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+EXPOSE 22 80
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

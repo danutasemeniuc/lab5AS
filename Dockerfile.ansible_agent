@@ -1,0 +1,62 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalare pachete de bază
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    openssh-client \
+    python3 \
+    python3-pip \
+    ansible \
+    git \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Creare utilizator jenkins
+RUN useradd -m -s /bin/bash jenkins && \
+    echo "jenkins ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Configurare SSH
+RUN mkdir /var/run/sshd && \
+    sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+
+# Setare ca utilizator jenkins
+USER jenkins
+WORKDIR /home/jenkins
+
+# Creare director .ssh
+RUN mkdir -p /home/jenkins/.ssh && \
+    chmod 700 /home/jenkins/.ssh
+
+# Revenire la root pentru copiere chei
+USER root
+
+# Copiere și configurare chei SSH
+COPY keys/ansible_to_testserver /home/jenkins/.ssh/id_ed25519
+COPY keys/ansible_to_testserver.pub /home/jenkins/.ssh/id_ed25519.pub
+
+RUN chown -R jenkins:jenkins /home/jenkins/.ssh && \
+    chmod 600 /home/jenkins/.ssh/id_ed25519 && \
+    chmod 644 /home/jenkins/.ssh/id_ed25519.pub
+
+# Configurare SSH
+RUN echo "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile=/dev/null" > /home/jenkins/.ssh/config && \
+    chown jenkins:jenkins /home/jenkins/.ssh/config && \
+    chmod 600 /home/jenkins/.ssh/config
+
+# Setup chei publice pentru Jenkins
+RUN mkdir -p /home/jenkins/.ssh && \
+    touch /home/jenkins/.ssh/authorized_keys && \
+    chown -R jenkins:jenkins /home/jenkins/.ssh && \
+    chmod 600 /home/jenkins/.ssh/authorized_keys
+
+# Verificare Ansible
+RUN ansible --version
+
+# Expunere port SSH
+EXPOSE 22
+
+# Pornire SSH
+CMD ["/usr/sbin/sshd", "-D"]

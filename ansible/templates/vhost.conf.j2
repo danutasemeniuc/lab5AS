@@ -1,0 +1,19 @@
+<VirtualHost *:80>
+    ServerName {{ server_name }}
+    ServerAdmin webmaster@localhost
+
+    DocumentRoot {{ apache_document_root }}
+
+    <Directory {{ apache_document_root }}>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/phpapp_error.log
+    CustomLog ${APACHE_LOG_DIR}/phpapp_access.log combined
+
+    <FilesMatch \.php$>
+        SetHandler application/x-httpd-php
+    </FilesMatch>
+</VirtualHost>

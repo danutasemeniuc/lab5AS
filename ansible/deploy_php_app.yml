@@ -1,0 +1,76 @@
+---
+- name: Deploy PHP Application to Test Server
+  hosts: test_servers
+  become: yes
+  gather_facts: no
+
+  vars:
+    app_directory: "/var/www/html/phpapp"
+    temp_directory: "/tmp/php_deploy"
+    apache_document_root: "{{ app_directory }}/public"
+
+  tasks:
+    - name: Create temporary directory
+      file:
+        path: "{{ temp_directory }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy application files from Jenkins workspace
+      synchronize:
+        src: "{{ lookup('env', 'WORKSPACE') }}/"
+        dest: "{{ temp_directory }}/"
+        delete: yes
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=vendor"
+          - "--exclude=.env"
+
+    - name: Install Composer dependencies on target
+      composer:
+        command: install
+        working_dir: "{{ temp_directory }}"
+        no_dev: yes
+        optimize_autoloader: yes
+      become_user: ansible
+
+    - name: Ensure application directory exists
+      file:
+        path: "{{ app_directory }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Copy application to final destination
+      command: rsync -av --delete {{ temp_directory }}/ {{ app_directory }}/
+      args:
+        warn: false
+
+    - name: Set proper permissions
+      file:
+        path: "{{ app_directory }}"
+        owner: www-data
+        group: www-data
+        recurse: yes
+
+    - name: Create .env file if needed
+      copy:
+        dest: "{{ app_directory }}/.env"
+        content: |
+          APP_ENV=production
+          APP_DEBUG=false
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      when: not ansible_check_mode
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
+
+    - name: Clean up temporary directory
+      file:
+        path: "{{ temp_directory }}"
+        state: absent

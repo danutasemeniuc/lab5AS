@@ -1,0 +1,104 @@
+---
+- name: Configure Test Server for PHP Application
+  hosts: test_servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    php_version: "8.1"
+    app_directory: "/var/www/html/phpapp"
+    apache_document_root: "{{ app_directory }}/public"
+    server_name: "test-server.local"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install Apache2
+      apt:
+        name: apache2
+        state: present
+
+    - name: Install PHP and extensions
+      apt:
+        name:
+          - php{{ php_version }}
+          - php{{ php_version }}-cli
+          - php{{ php_version }}-common
+          - php{{ php_version }}-mbstring
+          - php{{ php_version }}-xml
+          - php{{ php_version }}-curl
+          - php{{ php_version }}-mysql
+          - libapache2-mod-php{{ php_version }}
+        state: present
+
+    - name: Enable Apache modules
+      apache2_module:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - rewrite
+        - php{{ php_version }}
+      notify: Restart Apache
+
+    - name: Create application directory
+      file:
+        path: "{{ app_directory }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Create public directory
+      file:
+        path: "{{ apache_document_root }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Configure Apache virtual host
+      template:
+        src: templates/vhost.conf.j2
+        dest: /etc/apache2/sites-available/phpapp.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart Apache
+
+    - name: Disable default site
+      command: a2dissite 000-default.conf
+      args:
+        removes: /etc/apache2/sites-enabled/000-default.conf
+      notify: Restart Apache
+
+    - name: Enable PHP application site
+      command: a2ensite phpapp.conf
+      args:
+        creates: /etc/apache2/sites-enabled/phpapp.conf
+      notify: Restart Apache
+
+    - name: Ensure Apache is started and enabled
+      service:
+        name: apache2
+        state: started
+        enabled: yes
+
+    - name: Create info.php for testing
+      copy:
+        dest: "{{ apache_document_root }}/info.php"
+        content: |
+          <?php
+          phpinfo();
+          ?>
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+  handlers:
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
